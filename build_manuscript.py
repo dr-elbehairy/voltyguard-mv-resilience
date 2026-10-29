@@ -107,7 +107,7 @@ def TABLE(title, header, rows, widths, size=7.5, note=None):
             row.cells[i].width = Cm(w)
             for para in row.cells[i].paragraphs:
                 para.paragraph_format.space_after = Pt(0); para.paragraph_format.line_spacing = 1.0
-                if ri < len(t.rows) - 1: para.paragraph_format.keep_with_next = True
+                if ri < len(t.rows) - 1 or note: para.paragraph_format.keep_with_next = True
     if note: P(note, align="l", size=7, after=4, indent=False)
     else: P("", after=4, indent=False)
 
