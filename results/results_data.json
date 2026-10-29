@@ -1,0 +1,61 @@
+{
+ "n_real": 24,
+ "hours": 2208,
+ "nodes": 33,
+ "node_hours": 1748736,
+ "features_raw": 30,
+ "features_with_rolling": 82,
+ "class_counts": {
+  "normal": 1677656,
+  "incipient": 57958,
+  "attack": 8508,
+  "sensor": 4614
+ },
+ "fail7_share": 0.01114404946565628,
+ "episodes": {
+  "joint": 59,
+  "transformer": 57,
+  "fdi_provoke": 38,
+  "fdi_electrical": 24,
+  "fdi_mask": 13,
+  "sensor_stuck": 24,
+  "sensor_drift": 24
+ },
+ "episodes_by_split": {
+  "train": {
+   "joint": 35,
+   "transformer": 34,
+   "fdi_provoke": 20,
+   "fdi_electrical": 14,
+   "fdi_mask": 8,
+   "sensor_stuck": 14,
+   "sensor_drift": 14
+  },
+  "val": {
+   "joint": 10,
+   "transformer": 10,
+   "fdi_provoke": 7,
+   "fdi_electrical": 4,
+   "fdi_mask": 1,
+   "sensor_stuck": 4,
+   "sensor_drift": 4
+  },
+  "test": {
+   "joint": 14,
+   "transformer": 13,
+   "fdi_provoke": 11,
+   "fdi_electrical": 6,
+   "fdi_mask": 4,
+   "sensor_stuck": 6,
+   "sensor_drift": 6
+  }
+ },
+ "heatwave_days_mean": 10.583333333333334,
+ "sim_runtime_s_mean": 25.359475125869114,
+ "dga_online_share": 0.51171875,
+ "pd_monitored_share": 0.4830729166666667,
+ "l1_rates_on_normal": {
+  "caution_or_alarm": 0.03617424895239877,
+  "alarm": 0.002700866148323592
+ }
+}
