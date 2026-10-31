@@ -115,6 +115,70 @@ def n1_feasible(net, bus, hour_load_scale):
     net.line.loc[:, "in_service"] = base_ins; net.load["scaling"] = 1.0
     return bool(best)
 
+
+def cluster_class(P_r, h, n):
+    """Majority non-normal arg-max class over the first MIN_RUN hours of an alert cluster (0 = unclassified)."""
+    votes = P_r[h:h + MIN_RUN, n].argmax(-1); nz = votes[votes > 0]
+    return int(np.bincount(nz, minlength=4).argmax()) if len(nz) else 0
+
+def policy_eval(logit_r, P_r, Y_r, X_r, eps, feats, tau, gate):
+    """Cyber-aware decision policy on one realisation.  Every alert cluster is routed by the class head:
+    class 1 (incipient fault) or 0 (unclassified) -> maintenance scheduler; class 2 (suspected attack) -> security
+    review, no switching; class 3 (sensor) -> instrumentation check.  Returns per-episode outcomes."""
+    H_, N_ = logit_r.shape; l1 = X_r[:, :, feats.index("l1_code")] if gate else None
+    a = alert_matrix(logit_r, tau, l1); starts = runs_of_true(a)
+    route = {n: [(h, cluster_class(P_r, h, n)) for h in starts[n]] for n in range(N_)}
+    out = dict(fail=[], attack=[], mask=[], false_sched=0, false_held=0)
+    fail_eps = [e for e in eps if e["kind"] in ("joint", "transformer")]
+    covered = np.zeros((H_, N_), bool)
+    for e in fail_eps:
+        b, f = e["bus"], e["fail"]; lo = max(0, f - LOOKBACK_D * 24); covered[lo:f + 24, b] = True
+        al = [(h, c) for h, c in route[b] if lo <= h < f]
+        sched = [h for h, c in al if c in (0, 1)]; held = [h for h, c in al if c == 2]
+        status = "missed" if not al else ("scheduled" if sched and sched[0] == al[0][0] else ("delayed" if sched else "held"))
+        out["fail"].append(dict(kind=e["kind"], bus=b, status=status, lead_first_h=(f - al[0][0]) if al else None,
+                                lead_policy_h=(f - sched[0]) if sched else None, n_held=len(held)))
+    for e in eps:
+        if not e["kind"].startswith("fdi"): continue
+        b = e["bus"]; al = [(h, c) for h, c in route[b] if e["onset"] <= h < e["end"]]
+        covered[e["onset"]:e["end"], b] = True
+        out["attack"].append(dict(kind=e["kind"], bus=b, n_alerts=len(al), n_to_scheduler=sum(1 for _, c in al if c in (0, 1)),
+                                  n_held=sum(1 for _, c in al if c == 2)))
+        if e["kind"] == "fdi_mask":          # simultaneous fault + attack: the masked asset is degrading towards failure
+            fe = [x for x in fail_eps if x["bus"] == b and x["fail"] >= e["onset"]]
+            if fe:
+                f = min(x["fail"] for x in fe); lo = max(0, f - LOOKBACK_D * 24)
+                sched = [h for h, c in route[b] if lo <= h < f and c in (0, 1)]
+                out["mask"].append(dict(bus=b, fail_detected_and_scheduled=bool(sched), lead_policy_h=(f - sched[0]) if sched else None,
+                                        flagged_as_attack=any(c == 2 for h, c in route[b] if e["onset"] <= h < e["end"])))
+    for n in range(1, N_):
+        for h, c in route[n]:
+            if not covered[h, n]:
+                if c in (0, 1): out["false_sched"] += 1
+                else: out["false_held"] += 1
+    return out
+
+def tau_curve(Ls, Y, X, test, EP, feats, gate, nv):
+    """Test-set recall by fault kind, precision and false-cluster rate across the threshold grid (sensitivity check)."""
+    rows = []
+    for tau in np.round(np.arange(0.50, 0.951, 0.05), 2):
+        det, miss, fc, ad = [], [], 0, 0.0
+        for k, r in enumerate(test):
+            dd, mm, f_, a_, _ = episode_metrics(Ls[nv + k], Y[r], X[r], EP[r], feats, float(tau), gate); det += dd; miss += mm; fc += f_; ad += a_
+        rows.append(dict(tau=float(tau), recall=len(det) / max(1, len(det) + len(miss)),
+                         recall_transformer=sum(1 for d_ in det if d_["kind"] == "transformer") / max(1, sum(1 for e in det + miss if e["kind"] == "transformer")),
+                         recall_joint=sum(1 for d_ in det if d_["kind"] == "joint") / max(1, sum(1 for e in det + miss if e["kind"] == "joint")),
+                         precision=len(det) / max(1, len(det) + fc), false_per_100_asset_days=100 * fc / ad))
+    return rows
+
+def boot_ci(indicator_rows, B=2000, seed=0):
+    """95 % percentile bootstrap of mean recall over test failure episodes (rows: seeds x episodes of 0/1), resampling episodes."""
+    rng = np.random.default_rng(seed); M = np.asarray(indicator_rows, float); n = M.shape[1]
+    stats = [M[:, rng.integers(0, n, n)].mean() for _ in range(B)]
+    return [float(np.percentile(stats, 2.5)), float(np.percentile(stats, 97.5))]
+
+def sr_has(seed_res, k): return all(k in sr and sr[k] is not None for sr in seed_res)
+
 def main():
     X, Y, feats, EP, META = load_all(); nv = len(SPLIT["val"]); test = SPLIT["test"]
     net = build_feeder()
@@ -122,6 +186,12 @@ def main():
     models = {"static_alarm": ("preds_static.npz", "logit"), "static_caution": ("preds_static.npz", "logit_caution"), "xgb": ("preds_xgb.npz", "logit"),
               "gnn_full": ("preds_gnn_full.npz", "logit"), "gnn_full_gated": ("preds_gnn_full.npz", "logit"),
               "gnn_nograph": ("preds_gnn_nograph.npz", "logit"), "gnn_nophys": ("preds_gnn_nophys.npz", "logit")}
+    # false-alarm budget = static alarm's false-cluster rate on the VALIDATION realisations (frozen before any test metric is read)
+    d0 = np.load(os.path.join(RES, "preds_static.npz")); fc0 = ad0 = 0
+    for k, r in enumerate(SPLIT["val"]):
+        _, _, f_, a_, _ = episode_metrics(d0["logit"][k], Y[r], X[r], EP[r], feats, 0.5, False); fc0 += f_; ad0 += a_
+    BUDGET_VAL = 100 * fc0 / ad0; results["budget_definition"] = dict(source="static_alarm validation false clusters per 100 asset-days", value=BUDGET_VAL)
+    print("validation budget", round(BUDGET_VAL, 3), flush=True)
     for name, (fn, key) in models.items():
         d = np.load(os.path.join(RES, fn)); L = d[key]; P = d["probs"] if "probs" in d else None
         L = L if L.ndim == 4 else L[None]                        # [S, R', H, N]
@@ -164,7 +234,7 @@ def main():
             r_["auroc_nodehour"] = float(roc_auc_score(y, p)); r_["auprc_nodehour"] = float(average_precision_score(y, p))
             # matched false-alarm operating point: same validation false-cluster budget as the static alarm
             if not name.startswith("static"):
-                budget = results["static_alarm"]["seeds"][0]["false_per_100_asset_days"] if "static_alarm" in results else 0.5
+                budget = BUDGET_VAL
                 tau_b = choose_tau_budget(Ls[:nv], Y, X, SPLIT["val"], EP, feats, gate, budget)
                 det_b, miss_b, fc_b, ad_b = [], [], 0, 0.0
                 for k, r in enumerate(test):
@@ -172,6 +242,29 @@ def main():
                 lb = [d_["lead_h"] / 24 for d_ in det_b]
                 r_["budget"] = dict(tau=tau_b, budget=budget, recall=len(det_b) / max(1, len(det_b) + len(miss_b)), false_per_100_asset_days=100 * fc_b / ad_b,
                                     precision=len(det_b) / max(1, len(det_b) + fc_b), lead_median_d=float(np.median(lb)) if lb else None, share_lead_ge_48h=float(np.mean([l >= 2 for l in lb])) if lb else None)
+            # detection indicator per test failure episode (for the episode bootstrap)
+            ind = []
+            for k, r in enumerate(test):
+                dd, mm, _, _, _ = episode_metrics(Ls[nv + k], Y[r], X[r], EP[r], feats, tau, gate)
+                ind += [1] * len(dd) + [0] * len(mm)
+            r_["detect_indicator"] = ind
+            if P is not None:
+                pol = dict(fail=[], attack=[], mask=[], false_sched=0, false_held=0)
+                for k, r in enumerate(test):
+                    o = policy_eval(Ls[nv + k], P[s][nv + k] if P.ndim == 5 else P[nv + k], Y[r], X[r], EP[r], feats, tau, gate)
+                    for kk in ("fail", "attack", "mask"): pol[kk] += o[kk]
+                    pol["false_sched"] += o["false_sched"]; pol["false_held"] += o["false_held"]
+                st = [x["status"] for x in pol["fail"]]
+                r_["policy"] = dict(n_fail=len(st), scheduled=st.count("scheduled"), delayed=st.count("delayed"), held=st.count("held"), missed=st.count("missed"),
+                                    recall_policy=(st.count("scheduled") + st.count("delayed")) / max(1, len(st)),
+                                    lead_policy_median_d=float(np.median([x["lead_policy_h"] / 24 for x in pol["fail"] if x["lead_policy_h"] is not None])) if any(x["lead_policy_h"] is not None for x in pol["fail"]) else None,
+                                    attack_episodes=len(pol["attack"]), attack_with_alerts=sum(1 for x in pol["attack"] if x["n_alerts"] > 0),
+                                    attack_sent_to_scheduler=sum(1 for x in pol["attack"] if x["n_to_scheduler"] > 0),
+                                    attack_held=sum(1 for x in pol["attack"] if x["n_alerts"] > 0 and x["n_to_scheduler"] == 0),
+                                    mask_cases=len(pol["mask"]), mask_fail_scheduled=sum(1 for x in pol["mask"] if x["fail_detected_and_scheduled"]),
+                                    mask_flagged=sum(1 for x in pol["mask"] if x["flagged_as_attack"]),
+                                    false_to_scheduler=pol["false_sched"], false_held=pol["false_held"], detail=pol)
+            if name in ("gnn_full", "gnn_full_gated"): r_["tau_curve"] = tau_curve(Ls, Y, X, test, EP, feats, gate, nv)
             seed_res.append(r_); per_model_alerts[(name, s)] = alerts
         agg = {}
         for k in seed_res[0]:
@@ -181,6 +274,17 @@ def main():
         if "budget" in seed_res[0]:
             agg["budget"] = {k: dict(mean=float(np.mean([sr["budget"][k] for sr in seed_res if sr["budget"][k] is not None])), sd=float(np.std([sr["budget"][k] for sr in seed_res if sr["budget"][k] is not None])))
                              for k in ("recall", "false_per_100_asset_days", "precision", "lead_median_d", "share_lead_ge_48h", "tau")}
+        if "policy" in seed_res[0]:
+            agg["policy"] = {k: dict(mean=float(np.mean([sr["policy"][k] for sr in seed_res if sr["policy"][k] is not None])), sd=float(np.std([sr["policy"][k] for sr in seed_res if sr["policy"][k] is not None])))
+                             for k in ("recall_policy", "lead_policy_median_d", "scheduled", "delayed", "held", "missed", "attack_sent_to_scheduler", "attack_held", "attack_with_alerts", "mask_fail_scheduled", "mask_flagged", "false_to_scheduler", "false_held")}
+        agg["recall_ci95"] = boot_ci([sr["detect_indicator"] for sr in seed_res])
+        agg["recall_by_kind"] = {k: dict(mean=float(np.mean([sr["recall_by_kind"][k] for sr in seed_res])), sd=float(np.std([sr["recall_by_kind"][k] for sr in seed_res])),
+                                         per_seed=[sr["recall_by_kind"][k] for sr in seed_res]) for k in ("joint", "transformer")}
+        agg["n_seeds"] = len(seed_res)
+        if len(seed_res) > 3:       # like-for-like aggregate over the first three seeds (ablations were trained with three)
+            agg["first3"] = {k: dict(mean=float(np.mean([sr[k] for sr in seed_res[:3]])), sd=float(np.std([sr[k] for sr in seed_res[:3]]))) for k in ("recall", "precision", "false_per_100_asset_days", "lead_median_d", "fault_vs_attack_accuracy") if sr_has(seed_res, k)}
+            agg["first3"]["budget_recall"] = dict(mean=float(np.mean([sr["budget"]["recall"] for sr in seed_res[:3]])), sd=float(np.std([sr["budget"]["recall"] for sr in seed_res[:3]])))
+            agg["first3"]["budget_lead"] = dict(mean=float(np.mean([sr["budget"]["lead_median_d"] for sr in seed_res[:3]])), sd=float(np.std([sr["budget"]["lead_median_d"] for sr in seed_res[:3]])))
         results[name] = dict(seeds=seed_res, agg=agg)
         print(name, {k: round(v["mean"], 3) for k, v in agg.items() if k in ("recall", "precision", "false_per_100_asset_days", "lead_median_d", "share_lead_ge_48h", "fault_vs_attack_accuracy", "ece", "auprc_nodehour")}, flush=True)
     # ---- SERA action mapping and N-1 feasibility for the gated VoltyGuard (seed 0) and the static alarm
@@ -205,6 +309,17 @@ def main():
                     feas = bool(spare >= S_load)
                 n1.append(feas); acts["transfer" if feas else "emergency"] += 1
         sera[name] = dict(actions=acts, n1_checks=len(n1), n1_feasible=int(sum(n1)))
+        if "policy" in det:
+            pa = dict(planned=0, transfer=0, emergency=0, held=0, missed=0); pn1 = []
+            Pm = np.load(os.path.join(RES, models[name][0]))["probs"]; Pm = Pm[0] if Pm.ndim == 5 else Pm
+            for k, r in enumerate(test):
+                o = policy_eval(Ls[nv + k], Pm[nv + k], Y[r], X[r], EP[r], feats, tau, name.endswith("_gated"))
+                for e in o["fail"]:
+                    if e["status"] == "missed": pa["missed"] += 1; continue
+                    if e["status"] == "held": pa["held"] += 1; continue
+                    if e["lead_policy_h"] >= 48: pa["planned"] += 1; continue
+                    pa["emergency"] += 1   # short-lead cases under the policy; N-1 feasibility as above is not re-run here
+            sera[name]["policy_actions"] = pa
     results["sera"] = sera
     save_json(results, os.path.join(RES, "results_eval.json")); print(json.dumps(sera, indent=1))
 

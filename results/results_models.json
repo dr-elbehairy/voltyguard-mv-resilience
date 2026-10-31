@@ -74,6 +74,20 @@
    "epochs": 7,
    "temperature": 1.5547666549682617,
    "n_params": 21173
+  },
+  {
+   "seed": 3,
+   "train_s": 158.77937602996826,
+   "epochs": 7,
+   "temperature": 1.449910044670105,
+   "n_params": 21173
+  },
+  {
+   "seed": 4,
+   "train_s": 153.1445348262787,
+   "epochs": 7,
+   "temperature": 1.4486260414123535,
+   "n_params": 21173
   }
  ],
  "gnn_nograph": [

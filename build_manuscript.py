@@ -29,6 +29,12 @@ def bg(model, key, d=2, pct=False, sd=True):
     v = E[model]["agg"]["budget"][key]; m = v["mean"] * (100 if pct else 1); sdv = v["sd"] * (100 if pct else 1)
     return f"{m:.{d}f}" + (f" ± {sdv:.{d}f}" if sd and sdv > 0 else "")
 def f1(x): return f"{x:.1f}"
+NSEED = lambda m: E[m]["agg"].get("n_seeds", len(E[m]["seeds"]))
+def a3(model, key):   # like-for-like mean over the first three seeds when the model has more
+    a = E[model]["agg"]; return a["first3"][key]["mean"] if "first3" in a and key in a["first3"] else a[key]["mean"]
+BUDGET = E["budget_definition"]["value"]
+_pa0 = E["sera"]["gnn_full_gated"]["policy_actions"]; pa_planned_text = f"{_pa0['planned']} of {_pa0['planned'] + _pa0['emergency'] + _pa0['held'] + _pa0['missed']}"
+POL = E["gnn_full_gated"]["agg"]["policy"]; POL0 = E["gnn_full_gated"]["seeds"][0]["policy"]
 def pct(x, d=0): return f"{100 * x:.{d}f}%"
 
 # ------------------------------------------------------------------ document
@@ -87,6 +93,10 @@ def TABLE(title, header, rows, widths, size=7.5, note=None):
     p2 = P(title.upper(), align="c", size=7.5, after=2, indent=False, keep=True)
     t = doc.add_table(rows=1, cols=len(header)); t.style = "Table Grid"; t.alignment = WD_TABLE_ALIGNMENT.CENTER; t.autofit = False
     tblPr = t._tbl.tblPr; lay = OxmlElement("w:tblLayout"); lay.set(qn("w:type"), "fixed"); tblPr.append(lay)
+    mar = OxmlElement("w:tblCellMar")
+    for side in ("left", "right"):
+        e = OxmlElement(f"w:{side}"); e.set(qn("w:w"), "30"); e.set(qn("w:type"), "dxa"); mar.append(e)
+    tblPr.append(mar)
     for i, h in enumerate(header):
         c = t.rows[0].cells[i]; c.text = ""; r = c.paragraphs[0].add_run(h); r.bold = True; r.font.size = Pt(size); r.font.name = FONT; set_cell_bg(c, "EDEDED")
     trPr = t.rows[0]._tr.get_or_add_trPr(); th = OxmlElement("w:tblHeader"); th.set(qn("w:val"), "true"); trPr.append(th)
@@ -177,20 +187,20 @@ sera = E["sera"]
 set_cols(sec, 1)
 P("Resilient Grid Intelligence: A Standards-Guided Graph Neural Network Framework for Incipient Fault Prediction and Cyber-Physical Anomaly Discrimination in Saudi Medium-Voltage Distribution Networks",
   bold=True, align="c", size=20, after=10, indent=False)
-P("Moustafa Elbehairy^1,2^, Ahmed Abu Abuseen^1^, Nasser Al-Maawi^3^, Amir Raouf^4^, and Ahmed Abdulrahman Al-Jafin^5^", align="c", size=11, after=2, indent=False)
-P("^1^Nukhbaat Hulul Alamal, Riyadh, Saudi Arabia   ^2^SystechHub, Germany   ^3^United Specialists Co., Saudi Arabia   ^4^Karaz Platform, Saudi Arabia   ^5^Energy Tower Company, Saudi Arabia", align="c", size=9, after=1, indent=False)
+P("Moustafa Elbehairy^1,2^, Ahmad Abuseeni^1^, Nasser Al-Maawi^3^, Amir Raouf^4^, and Ahmed Abdulrahman Al-Jafin^5^", align="c", size=11, after=2, indent=False)
+P("^1^Nukhbaat Hulul Alamal, Riyadh, Saudi Arabia   ^2^SystechHub, Germany   ^3^United Specialists Co., Saudi Arabia   ^4^Karaz Platform, Saudi Arabia   ^5^Energy Towers Company for Engineering, Saudi Arabia", align="c", size=9, after=1, indent=False)
 P("m.elbehairy@nukhbaa.sa, a.abuseen@nukhbaa.sa, nasser.a@usco-sa.com, amir.raouf@outlook.sa, aaljafin@etco.com.sa   |   Corresponding author: Moustafa Elbehairy", align="c", size=9, after=10, indent=False)
 
 # ================================================================== TWO COLUMNS
 wide_section(2)
-ABSTRACT = (f"Most customer interruptions originate in medium-voltage networks, and failures of distribution transformers and cable joints emit measurable "
-            f"precursors days before breakdown. This paper develops VoltyGuard, which represents a 13.8 kV-class feeder as a dynamic graph and fuses standards-based "
-            f"diagnostics, physics-based thermal and power-flow models and a spatio-temporal graph neural network, with alerts gated by agreement between the standards "
-            f"and learned layers. A cyber-physical discriminator separates incipient faults from false data injection, and a regulation-aware scheduler maps lead time "
-            f"to actions admissible under the Saudi Electricity Regulatory Authority's guaranteed standards. On {nd['n_real']} simulated Riyadh summers of the IEEE 33-bus "
-            f"feeder, at the false-alarm budget of the standards alarm the framework detects {pct(E[G]['agg']['budget']['recall']['mean'])} of failures with a median warning of "
-            f"{bg(G, 'lead_median_d', 1, sd=False)} days (alarm: {pct(E[SA]['agg']['recall']['mean'])}, {ag(SA, 'lead_median_d', 1, sd=False)} days), reaches {pct(E[G]['agg']['precision']['mean'])} "
-            f"precision at its own operating point, separates faults from attacks in {pct(E[G]['agg']['fault_vs_attack_accuracy']['mean'])} of episodes and converts every detected failure into a planned outage.")
+ABSTRACT = (f"Most customer interruptions originate in medium-voltage networks, and distribution transformers and cable joints emit precursors days before "
+            f"failure. VoltyGuard represents a 13.8 kV-class feeder as a dynamic graph and fuses standards-based diagnostics, physics-based thermal and power-flow "
+            f"models and a spatio-temporal graph neural network, with alerts gated by agreement between the standards and learned layers. A cyber-physical "
+            f"discriminator separates incipient faults from false data injection and feeds an explicit decision policy; a regulation-aware scheduler maps lead time to "
+            f"actions admissible under the Saudi Electricity Regulatory Authority's standards. On {nd['n_real']} simulated Riyadh summers of the IEEE 33-bus feeder, with "
+            f"thresholds and the false-alarm budget fixed on validation data, the framework detects {pct(E[G]['agg']['budget']['recall']['mean'])} of failures at the standards alarm's budget "
+            f"(alarm: {pct(E[SA]['agg']['recall']['mean'])}) with a median warning of {bg(G, 'lead_median_d', 1, sd=False)} days, separates faults from attacks in {pct(E[G]['agg']['fault_vs_attack_accuracy']['mean'])} of episodes, "
+            f"and schedules {pa_planned_text} failures as planned outages while holding suspected attacks for security review.")
 p = P("", align="j", size=9, after=4, indent=False); r = p.add_run("Abstract—"); r.bold = True; r.font.size = Pt(9); r.font.name = FONT
 r = p.add_run(ABSTRACT); r.bold = True; r.font.size = Pt(9); r.font.name = FONT
 p = P("", align="j", size=9, after=6, indent=False); r = p.add_run("Index Terms—"); r.bold = True; r.font.size = Pt(9); r.font.name = FONT
@@ -264,7 +274,10 @@ P(f"Genuine incipient faults leave physically consistent signatures across indep
   f"temperatures computed from load, PD activity corroborates self-clearing events, and electrical quantities obey the power-flow equations across the graph. An "
   f"attacker who manipulates one channel must spoof several modalities and several nodes consistently to avoid detection. The discriminator is the second head of "
   f"Layer 3, trained on the Layer-2 residuals and on the neighbours' features, and it classifies each anomaly as incipient fault, suspected data-integrity attack or "
-  f"sensor malfunction. Suspected attacks never trigger switching recommendations; they are escalated to the security operations function.")
+  f"sensor malfunction. The class output is advisory and feeds an explicit decision policy: each alert cluster is routed by its majority class, incipient fault "
+  f"or unclassified to the maintenance scheduler, suspected attack to security review without any switching recommendation, and sensor malfunction to an "
+  f"instrumentation check. Section V-C evaluates this policy, including the case of genuine degradation under a masking attack, which stays visible because the "
+  f"attacker does not control the hot-spot temperature implied by load or the neighbours' voltages.")
 H2("Regulation-Aware Maintenance Scheduler")
 P(f"The scheduler converts each critical alert into an admissible action given its lead time, the N-1 margin of adjacent assets and customer criticality (Table I). "
   f"For a cable-section alert the N-1 check opens the section, closes the best normally-open tie and solves the power flow, accepting the transfer when all bus "
@@ -316,16 +329,16 @@ H2("Models, Baselines and Ablations")
 P(f"*Static rules* use the Layer-1 code alone (alarm, or caution-or-alarm). The *per-asset baseline* is a gradient-boosted tree ensemble {c('xgb')} trained on each "
   f"node's own features and rolling statistics, without neighbours; it represents the asset-isolated learning approach of {c('atrigna')}. *VoltyGuard* is the "
   f"network of Section III-B with hidden size 64 and {M['gnn_full'][0]['n_params']:,} parameters, trained with class-weighted losses, AdamW, early stopping on the "
-  f"validation realisations and three random seeds. Two ablations remove the graph (adjacency set to zero, so each node sees only itself) and remove the "
+  f"validation realisations and {NSEED(G)} random seeds (three for each ablation, which were trained first; like-for-like comparisons use the first three seeds of the full model). Two ablations remove the graph (adjacency set to zero, so each node sees only itself) and remove the "
   f"Layer-1/2 features (the network sees raw measurements only). Realisations are split {len(SPLIT_TR := list(range(14)))}/4/6 into training, validation and test, "
   f"so that no test asset, episode or weather trace is seen in training.")
 H2("Metrics")
 P(f"An alert is raised when the calibrated failure probability exceeds a threshold for three consecutive hours; the threshold is chosen on the validation "
-  f"realisations to maximise episode-level F1 (the *F1 operating point*); a second, *matched-budget* threshold is the lowest one whose validation false-cluster rate stays within the false-cluster rate of the static alarm, which makes recall and lead time comparable across models at equal nuisance. A failure episode counts as detected if an alert occurs on that asset within the 45 days before failure, and its "
+  f"realisations to maximise episode-level F1 (the *F1 operating point*); a second, *matched-budget* threshold is the lowest one whose validation false-cluster rate stays within the static alarm's false-cluster rate on the same validation realisations ({BUDGET:.2f} per 100 asset-days). Both thresholds and the budget are therefore fixed on validation data before any test metric is read, and the test false-cluster rate actually realised at the matched threshold is reported rather than assumed equal. A failure episode counts as detected if an alert occurs on that asset within the 45 days before failure, and its "
   f"*warning lead time* is the interval from the first such alert to failure. Alert runs on assets that do not fail within 45 days are *false clusters*, reported "
   f"per 100 asset-days. Episode recall and precision follow. *Discrimination accuracy* is the share of anomaly episodes whose majority class over the episode is "
   f"correct; the fault-versus-attack figure restricts this to incipient-fault and FDI episodes. Calibration is the expected calibration error (ECE) on test "
-  f"node-hours {c('guo')}. The SERA mapping of Table I is applied to every detected failure at the hour of its first alert.")
+  f"node-hours {c('guo')}. The SERA mapping of Table I is applied to every detected failure at the hour of its first alert, and again under the decision policy of Section III-C, at the hour of the first alert routed to the scheduler. For the policy we count attack episodes whose alerts reached the scheduler (unnecessary switching recommendations), failures whose alerts were held as suspected attacks (missed or delayed by the policy) and masked assets that failed while under attack. Recall is reported per seed and per fault class, with a 95% bootstrap interval over test episodes.")
 
 # ================================================================== V. RESULTS
 H1("Results")
@@ -335,16 +348,23 @@ for key, lab in ((SA, "Static alarm (Layer 1 = alarm)"), (SC, "Static caution-or
     a = E[key]["agg"]
     hasb = "budget" in E[key]["agg"]
     rows.append([(lab, key in (G, GG)), ag(key, "recall", 2, sd=False), ag(key, "precision", 2, sd=False), ag(key, "false_per_100_asset_days", 2, sd=False), ag(key, "lead_median_d", 1, sd=False), ag(key, "share_lead_ge_48h", 2, sd=False),
-                 bg(key, "recall", 2, sd=False) if hasb else "—", bg(key, "lead_median_d", 1, sd=False) if hasb else "—"])
-TABLE(f"Episode-level performance on the six test realisations ({n_test_fail} failures; means over three seeds; seed s.d. of recall and lead in the text). Columns 2–6: F1 operating point; 7–8: matched false-alarm budget ({s0(SA, 'false_per_100_asset_days'):.2f} false clusters / 100 asset-days)",
-      ["Model", "Recall", "Prec.", "FA/100", "Lead (d)", "≥48 h", "Rec.@B", "Lead@B"], rows, [2.75, 0.85, 0.8, 0.85, 0.85, 0.75, 0.85, 0.9], size=6.5,
-      note="FA/100: false alert clusters per 100 asset-days. Rec.@B, Lead@B: recall and median lead (days) at the matched false-alarm budget.")
+                 bg(key, "recall", 2, sd=False) if hasb else "—", bg(key, "false_per_100_asset_days", 2, sd=False) if hasb else "—", bg(key, "lead_median_d", 1, sd=False) if hasb else "—"])
+TABLE(f"Episode-level performance on the six test realisations ({n_test_fail} failures; means over seeds: {NSEED(G)} for VoltyGuard, three otherwise). Columns 2–6: F1 operating point; 7–9: matched false-alarm budget fixed on validation data ({BUDGET:.2f} false clusters / 100 asset-days)",
+      ["Model", "Recall", "Prec.", "FA/100", "Lead (d)", "≥48 h", "Rec.@B", "FA@B", "Lead@B"], rows, [2.55, 0.8, 0.75, 0.8, 0.8, 0.7, 0.8, 0.75, 0.8], size=6.5,
+      note="FA/100: false alert clusters per 100 asset-days. Rec.@B, FA@B, Lead@B: recall, realised test false-cluster rate and median lead (days) at the matched budget.")
+srows = []
+for i, sr in enumerate(E[GG]["seeds"]):
+    srows.append([f"{i}", f"{sr['tau']:.2f}", f"{sr['recall_by_kind']['joint']:.2f}", f"{sr['recall_by_kind']['transformer']:.2f}", f"{sr['recall']:.2f}", f"{sr['false_per_100_asset_days']:.2f}", f"{sr['budget']['recall']:.2f}", f"{sr['budget']['false_per_100_asset_days']:.2f}"])
+ci = E[GG]["agg"]["recall_ci95"]
+TABLE(f"VoltyGuard (gated) by training seed: F1-point threshold and recall by fault class ({n_test_fail} test failures: {nd['episodes_by_split']['test']['joint']} joints, {nd['episodes_by_split']['test']['transformer']} transformers)",
+      ["Seed", "τ", "Joints", "Transf.", "Recall", "FA/100", "Rec.@B", "FA@B"], srows, [0.9, 0.8, 1.05, 1.15, 1.1, 1.2, 1.3, 1.4], size=6.5,
+      note=f"95% bootstrap interval of mean recall over test episodes: {ci[0]:.2f}–{ci[1]:.2f}.")
 P(f"Table III gives the main result. The standards alarm alone detects {pct(E[SA]['agg']['recall']['mean'])} of the {n_test_fail} test failures with a median "
   f"lead of {ag(SA, 'lead_median_d', 1, sd=False)} days, but only {pct(E[SA]['agg']['precision']['mean'])} of its alert clusters precede a failure "
   f"({ag(SA, 'false_per_100_asset_days', 2, sd=False)} false clusters per 100 asset-days, about {round(E[SA]['agg']['false_per_100_asset_days']['mean'] * 32 * 3.65)} per feeder-year); the caution "
   f"level raises recall to {pct(E[SC]['agg']['recall']['mean'])} at {ag(SC, 'false_per_100_asset_days', 2, sd=False)} false clusters per 100 asset-days. At its F1 operating "
   f"point VoltyGuard is the most selective model: {pct(E[G]['agg']['precision']['mean'])} precision and {ag(G, 'false_per_100_asset_days', 2, sd=False)} false clusters per "
-  f"100 asset-days, with {pct(E[G]['agg']['recall']['mean'])} recall (seed-to-seed s.d. {pct(E[G]['agg']['recall']['sd'])}) and a median lead of "
+  f"100 asset-days, with {pct(E[G]['agg']['recall']['mean'])} recall (seed-to-seed s.d. {pct(E[G]['agg']['recall']['sd'])}; bootstrap interval {pct(E[G]['agg']['recall_ci95'][0])}–{pct(E[G]['agg']['recall_ci95'][1])}) and a median lead of "
   f"{ag(G, 'lead_median_d', 1, sd=False)} days. The fairer comparison is at equal nuisance. When every learned model is given the standards alarm's own false-alarm "
   f"budget, VoltyGuard detects {pct(E[G]['agg']['budget']['recall']['mean'])} of failures with a median lead of {bg(G, 'lead_median_d', 1, sd=False)} days, "
   f"against {pct(E[XG]['agg']['budget']['recall']['mean'])} and {bg(XG, 'lead_median_d', 1, sd=False)} days for the per-asset ensemble and "
@@ -357,9 +377,19 @@ P(f"Table III gives the main result. The standards alarm alone detects {pct(E[SA
   f"because the hot-spot limit of IEC 60076-7 is exceeded weeks before gassing becomes decisive, but it gives joints only {f1(s0(SA, 'lead_by_kind_median_d')['joint'])} days; "
   f"the learned model's seven-day target horizon concentrates its warnings in the week before failure, and a longer horizon would move them earlier at a cost in precision.")
 wide_section(1)
-FIG(f"{FIGS}/fig2_precursors.png", "Two test episodes. Top: precursors of (a) a transformer thermal failure and (b) a cable-joint failure. Bottom: calibrated failure probability of VoltyGuard and of the per-asset model, and the Layer-1 standards code; the dashed line marks the SERA 48-hour notice period.", width_cm=17.5)
+FIG(f"{FIGS}/fig2_precursors.png", "Two test episodes. Top: precursors of (a) a transformer thermal failure and (b) a cable-joint failure. Bottom: calibrated failure probability of VoltyGuard and of the per-asset model, and the Layer-1 standards code; the dashed line marks the SERA 48-hour notice period.", width_cm=14.5)
 wide_section(2)
 FIG(f"{FIGS}/fig3_leadtime.png", "Warning lead time of detected failures on the test realisations (seed 0). Boxes show quartiles; the dashed line is the SERA two-day notice requirement.")
+_tc = {sr['tau']: sr for sr in E[GG]["seeds"]}; _worst = min(E[GG]["seeds"], key=lambda sr: sr["recall_by_kind"]["transformer"]); _wi = E[GG]["seeds"].index(_worst)
+_curve = {r_["tau"]: r_ for r_ in _worst["tau_curve"]}; _alt = _curve.get(round(_worst["tau"] - 0.05, 2), None)
+_weak = [i for i, sr in enumerate(E[GG]["seeds"]) if sr["recall_by_kind"]["transformer"] < 0.5]
+P(f"The seed-level figures behind these means are not uniform (Table IV). Joint failures are detected at {min(sr['recall_by_kind']['joint'] for sr in E[GG]['seeds']):.2f} or better by every seed, "
+  f"but transformer recall at the F1 point ranges from {min(sr['recall_by_kind']['transformer'] for sr in E[GG]['seeds']):.2f} to {max(sr['recall_by_kind']['transformer'] for sr in E[GG]['seeds']):.2f}, and "
+  f"seed{'s' if len(_weak) > 1 else ''} {' and '.join(map(str, _weak))} detect{'s' if len(_weak) == 1 else ''} fewer than half of the {nd['episodes_by_split']['test']['transformer']} transformer failures. "
+  f"Seed {_wi} is the extreme case: its validation-optimal threshold is {_worst['tau']:.2f}, the top of the search grid, and at that threshold it detects none of them"
+  + (f", whereas one grid step lower ({_alt['tau']:.2f}) the same network detects {_alt['recall_transformer']:.2f} of them at {_alt['false_per_100_asset_days']:.2f} false clusters per 100 asset-days" if _alt else "")
+  + f". The weakness is one of threshold selection on four validation realisations as much as of the representation: at the matched budget, which fixes the threshold by the false-alarm rate instead of by F1, seed {_wi} reaches {_worst['budget']['recall']:.2f} and the five-seed mean is {bg(GG, 'recall', 2, sd=False)}. "
+  f"We report the weak seeds rather than exclude them, and we read the F1-point recall as uncertain to the width of its bootstrap interval.")
 H2("Fault-versus-Attack Discrimination")
 cm = np.array(s0(G, "disc_confusion"))
 P(f"Fig. 4(a) shows the episode-level confusion of VoltyGuard's class head over the {int(cm[1:].sum())} test anomaly episodes. Incipient faults and FDI attacks are "
@@ -368,17 +398,30 @@ P(f"Fig. 4(a) shows the episode-level confusion of VoltyGuard's class head over 
   f"data, is the hardest case: {s0(G, 'mask_attacks_detected')} of {s0(G, 'mask_attacks')} were flagged as attacks, the others being exposed only by the physical "
   f"channels the attacker did not control (hot-spot temperature implied by load, neighbouring voltages). The per-asset ensemble, which cannot see the parent "
   f"branch's power balance, separates faults from attacks in {pct(s0(XG, 'fault_vs_attack_accuracy'))} of episodes.")
+H2("Cyber-Aware Decision Policy")
+P(f"Routing every alert cluster by its class turns the discriminator into an operational safeguard that can be scored. Over the {NSEED(GG)} seeds of the gated model, "
+  f"{POL['attack_with_alerts']['mean']:.1f} of the {n_test_att} test attack episodes produced failure alerts on the attacked asset; of these, {POL['attack_held']['mean']:.1f} were held for security review and "
+  f"{POL['attack_sent_to_scheduler']['mean']:.1f} reached the scheduler as unnecessary switching recommendations (seed 0: {POL0['attack_sent_to_scheduler']} of {POL0['attack_with_alerts']}). "
+  f"The cost on the physical side is small: {POL['held']['mean']:.1f} genuine failures per seed had every alert held as a suspected attack and {POL['delayed']['mean']:.1f} were delayed to a later, "
+  f"fault-classed alert, so policy recall is {pct(POL['recall_policy']['mean'])} against {pct(E[GG]['agg']['recall']['mean'])} without the policy, with a median lead of {POL['lead_policy_median_d']['mean']:.1f} days. "
+  f"The simultaneous fault-plus-attack case is the weak point: of the {nd['episodes_by_split']['test']['fdi_mask']} test assets that were degrading towards failure while their condition data were replayed, the failure was detected and scheduled in time in only "
+  f"{POL['mask_fail_scheduled']['mean']:.1f} cases per seed (seed 0: {POL0['mask_fail_scheduled']} of {POL0['mask_cases']}). The hot-spot temperature implied by load and the neighbouring voltages, which the attacker does not control, expose the mask at episode level (Section V-B), but they did not by themselves lift the failure probability above the alert threshold before failure. "
+  f"are not under the attacker's control. False clusters outside any episode split {POL['false_to_scheduler']['mean']:.1f} to the scheduler and {POL['false_held']['mean']:.1f} to security review per seed. "
+  f"The claim the paper makes is accordingly bounded: the class head is an advisory filter whose residual error is measured here, not a guarantee that no attack can reach a switching decision.")
 H2("Calibration")
 P(f"After temperature scaling the ECE of VoltyGuard's seven-day failure probability is {ag(G, 'ece', 3)} on {nd['node_hours'] * 6 // 24:,} test node-hours (Fig. 4(b)), "
   f"against {ag(XG, 'ece', 3)} for the per-asset model. Calibration matters for the scheduler, which reads the probability as a decision input rather than as a score.")
 FIG(f"{FIGS}/fig4_discrimination_calibration.png", "(a) Episode-level confusion of the anomaly class head on the test realisations (seed 0). (b) Reliability diagram of the calibrated seven-day failure probability.")
 H2("Ablation: What the Graph and the Standards Layers Add")
-P(f"Removing the graph (Fig. 5) lowers recall from {pct(E[G]['agg']['recall']['mean'])} to {pct(E[NG]['agg']['recall']['mean'])} at the F1 point and from "
-  f"{pct(E[G]['agg']['budget']['recall']['mean'])} to {pct(E[NG]['agg']['budget']['recall']['mean'])} at the matched budget, lowers precision from "
-  f"{pct(E[G]['agg']['precision']['mean'])} to {pct(E[NG]['agg']['precision']['mean'])}, and makes the lead time more variable across seeds "
-  f"(s.d. {ag(NG, 'lead_median_d', 1, sd=False) and f1(E[NG]['agg']['budget']['lead_median_d']['sd'])} days against {f1(E[G]['agg']['budget']['lead_median_d']['sd'])}). "
-  f"Removing the standards and physics features while keeping the graph leaves recall unchanged ({pct(E[NP]['agg']['recall']['mean'])}) but lowers precision to "
-  f"{pct(E[NP]['agg']['precision']['mean'])}, lowers fault-versus-attack accuracy to {pct(E[NP]['agg']['fault_vs_attack_accuracy']['mean'])}, and loses the mask "
+def _chg(a, b, what):
+    d = b - a
+    if abs(d) < 0.005: return f"leaves {what} unchanged ({pct(b)})"
+    return f"{'raises' if d > 0 else 'lowers'} {what} from {pct(a)} to {pct(b)}"
+P(f"On the three seeds shared by all networks (Fig. 5), removing the graph {_chg(a3(G, 'recall'), E[NG]['agg']['recall']['mean'], 'recall')} at the F1 point and "
+  f"{_chg(a3(G, 'budget_recall'), E[NG]['agg']['budget']['recall']['mean'], 'recall')} at the matched budget, {_chg(a3(G, 'precision'), E[NG]['agg']['precision']['mean'], 'precision')}, "
+  f"and makes the lead time more variable across seeds (s.d. {f1(E[NG]['agg']['budget']['lead_median_d']['sd'])} days against {f1(E[G]['agg']['budget']['lead_median_d']['sd'])}). "
+  f"Removing the standards and physics features while keeping the graph {_chg(a3(G, 'recall'), E[NP]['agg']['recall']['mean'], 'recall')} and {_chg(a3(G, 'precision'), E[NP]['agg']['precision']['mean'], 'precision')}, "
+  f"lowers fault-versus-attack accuracy to {pct(E[NP]['agg']['fault_vs_attack_accuracy']['mean'])}, and loses the mask "
   f"attacks entirely ({E[NP]['seeds'][0]['mask_attacks_detected']} of {E[NP]['seeds'][0]['mask_attacks']} flagged, against {s0(G, 'mask_attacks_detected')} of {s0(G, 'mask_attacks')} "
   f"with the full model): without the hot-spot temperature implied by load, a replayed condition record is indistinguishable from a healthy one. The two layers are "
   f"complementary. The physics features carry the thermal history that no 24-hour window of raw data contains and the reference against which a spoofed sensor is "
@@ -391,13 +434,15 @@ rows = []
 for key, lab in ((SA, "Static alarm"), (XG, "Per-asset GBT"), (G, "VoltyGuard"), (GG, "VoltyGuard, gated")):
     a = sera[key]["actions"]; tot = sum(a.values())
     rows.append([(lab, key in (G, GG)), a["planned"], a["transfer"], a["emergency"], a["missed"], f"{sera[key]['n1_feasible']}/{sera[key]['n1_checks']}"])
-TABLE(f"SERA action mapping of the {n_test_fail} test failures (seed 0)", ["Model", "Planned (≥48 h)", "N-1 transfer", "Emergency", "Missed", "N-1 feasible"], rows, [2.6, 1.3, 1.2, 1.2, 1.0, 1.3], size=6.5)
+pa = sera[GG]["policy_actions"]
+rows.append([("VoltyGuard, gated + policy", True), pa["planned"], "—", pa["emergency"], f"{pa['missed']} (+{pa['held']} held)", "—"])
+TABLE(f"SERA action mapping of the {n_test_fail} test failures (seed 0); last row: alerts held as suspected attacks are not scheduled", ["Model", "Planned", "Transfer", "Emergency", "Missed", "N-1 feas."], rows, [2.9, 1.2, 1.2, 1.3, 1.3, 1.0], size=6.5)
 gg = sera[GG]["actions"]; sa = sera[SA]["actions"]
-P(f"Table IV applies the scheduler. With VoltyGuard gated, {gg['planned']} of {n_test_fail} failures can be handled as planned outages with the two-day customer "
+P(f"Table V applies the scheduler. With VoltyGuard gated, {gg['planned']} of {n_test_fail} failures can be handled as planned outages with the two-day customer "
   f"notice, {gg['transfer']} as N-1 transfers without interruption and {gg['emergency']} require an emergency response; {gg['missed']} are missed. The standards "
   f"alarm alone leaves {sa['emergency'] + sa['missed']} failures to the emergency path. Of the {sera[GG]['n1_checks']} short-lead cases checked in the power-flow "
   f"model, {sera[GG]['n1_feasible']} satisfied the voltage and ampacity limits after tie-switch closure, a reminder that the value of a warning depends on the "
-  f"network's reserve as much as on its timing.")
+  f"network's reserve as much as on its timing. Under the cyber-aware policy the gated model still schedules {pa['planned']} failures as planned outages; {pa['held']} failure{'s' if pa['held'] != 1 else ''} whose only alerts were classed as attacks would wait for the security review.")
 
 # ================================================================== VI. DISCUSSION
 H1("Discussion")
@@ -411,7 +456,7 @@ P(f"Three findings carry over to deployment. First, the standards layer is not a
 P(f"The study has limits that we state plainly. All data are synthetic, generated from standard models and documented assumptions; the degradation laws, gas "
   f"generation rates and attack models are plausible, not fitted to Saudi field records, and the absolute numbers will move when they are. The feeder is balanced "
   f"and radial, without distributed generation, and the hourly resolution hides sub-cycle phenomena that synchrophasor or fault-recorder data would expose. Model "
-  f"selection used six test realisations and three seeds; the seed-to-seed standard deviations quoted in Section V are the honest size of that uncertainty. The next step is a "
+  f"selection used four validation and six test realisations and {NSEED(G)} seeds; the seed-to-seed spread and the bootstrap intervals in Section V are the honest size of that uncertainty, and one seed's F1 threshold landed on the edge of the search grid and cost it the transformer failures, which argues for choosing operating points by false-alarm budget rather than by F1 in deployment. The next step is a "
   f"shadow-mode pilot on a Saudi 13.8 kV network with read-only access to SCADA, condition-monitoring and relay data, which is the deployment path compatible "
   f"with the National Cybersecurity Authority's operational-technology controls {c('otcc')}: no control authority, data diode, engineer retains the decision, field "
   f"outcomes fed back to retrain. Reliability effects would then be measured with the IEEE 1366 indices {c('ieee1366')} rather than with simulated lead times, "
@@ -423,7 +468,7 @@ P(f"Predictive maintenance becomes useful to a regulated operator when it is tru
   f"addresses all three conditions for Saudi MV networks: it gates learned predictions on diagnostic standards, it discriminates incipient faults from false data "
   f"injection by exploiting physical and topological consistency, and it maps lead time to the actions SERA permits. On {nd['n_real']} simulated Riyadh summers "
   f"of the IEEE 33-bus feeder it detected {pct(E[G]['agg']['budget']['recall']['mean'])} of failures with a median warning of {bg(G, 'lead_median_d', 1, sd=False)} days at the false-alarm budget of the standards alarm, "
-  f"separated faults from attacks in {pct(E[G]['agg']['fault_vs_attack_accuracy']['mean'])} of episodes and turned most detected failures into planned outages. "
+  f"separated faults from attacks in {pct(E[G]['agg']['fault_vs_attack_accuracy']['mean'])} of episodes, and, under a decision policy that holds suspected attacks for security review, turned most detected failures into planned outages while sending {POL0['attack_sent_to_scheduler']} of {POL0['attack_with_alerts']} alerted attacks to the scheduler. "
   f"The generator, models and results are released for reuse, and the authors invite network operators to the shadow-mode pilot that must come next.")
 
 # ================================================================== DATA / ACK / REFERENCES
@@ -441,18 +486,35 @@ unused = [k for k in REFS if k not in ORDER]
 # ================================================================== BIOGRAPHIES
 H1u("Biographies")
 BIOS = [
- ("Moustafa Elbehairy", "is Co-Chief Executive Officer of Nukhbaat Hulul Alamal (Nukhba Business Solutions), Riyadh, Saudi Arabia, and a founding partner of SystechHub, Germany. He has more than eighteen years of experience in artificial intelligence, data science and risk analytics for government and critical-infrastructure clients in Saudi Arabia and Egypt, and lectures in statistics and insurance at Suez Canal University, Egypt. His research interests include graph learning for infrastructure, AI governance and risk modelling.", False),
- ("Ahmed Abu Abuseen", "is a consultant in data governance and personal-data protection at Nukhbaat Hulul Alamal, Riyadh, Saudi Arabia, advising public entities on compliance with the Saudi Personal Data Protection Law and the National Cybersecurity Authority's controls.", True),
- ("Nasser Al-Maawi", "is an electrical engineer with United Specialists Co., Saudi Arabia, working on distribution-network projects and field instrumentation.", True),
- ("Amir Raouf", "is a consultant in operations management and research with Karaz Platform, Saudi Arabia, with interests in maintenance scheduling and optimisation.", True),
- ("Ahmed Abdulrahman Al-Jafin", "is an electrical engineer and the founder of Energy Tower Company, Saudi Arabia. He previously held management positions at the Ministry of Energy and the Saudi Electricity Company, with a focus on medium-voltage distribution networks.", True),
+ ("Moustafa Elbehairy", "is co-founder and Co-Chief Executive Officer of Nukhbaat Hulul Alamal (NHA), Riyadh, Saudi Arabia, and a founding partner of SystechHub, Germany. He has more than eighteen years of experience in artificial intelligence, data science and risk analytics for government and critical-infrastructure clients in Saudi Arabia and Egypt, and lectures in statistics and insurance at Suez Canal University, Egypt. His research interests include graph learning for infrastructure, AI governance and risk modelling.", False, "elbehairy_c.png"),
+ ("Ahmad Abuseeni", "is co-founder and Co-Chief Executive Officer of Nukhbaat Hulul Alamal (NHA), Riyadh, Saudi Arabia, and an associate professor of computer information systems. He has more than eighteen years of experience in data management and governance consulting, information technology and artificial intelligence governance, in addition to his service as an associate professor in the Department of Management Information Systems at colleges of business administration in Saudi government universities. He is an expert in assessing data-management maturity and the requirements of the Saudi National Data Index (NDI) and National AI Index (NAII).", False, "abuseen_c.jpg"),
+ ("Nasser Al-Maawi", "is an electrical engineer with United Specialists Co., Saudi Arabia. He has [N] years of experience in distribution-network projects and field instrumentation. His interests include [to be supplied].", True, None),
+ ("Amir Raouf", "is a consultant in operations management and research with Karaz Platform, Saudi Arabia. He has [N] years of experience in [to be supplied]. His interests include maintenance scheduling and optimisation.", True, None),
+ ("Ahmed Abdulrahman Al-Jafin", "is an electrical engineer and the founder and General Manager of Energy Towers Company for Engineering, Saudi Arabia. He has held management positions at the Ministry of Energy and the Saudi Electricity Company. His interests include medium-voltage distribution networks and their protection.", False, "aljafin_c.png"),
 ]
-for name, text, hl in BIOS:
-    p = doc.add_paragraph(); p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY; p.paragraph_format.space_after = Pt(4); p.paragraph_format.line_spacing = 1.0
-    r = p.add_run("[photo 2.54 × 3.18 cm] "); r.font.size = Pt(9); r.font.name = FONT; r.font.highlight_color = WD_COLOR_INDEX.YELLOW
-    r = p.add_run(name + " "); r.bold = True; r.font.size = Pt(9); r.font.name = FONT
-    r = p.add_run(text); r.font.size = Pt(9); r.font.name = FONT
+from docx.enum.table import WD_TABLE_ALIGNMENT
+from docx.oxml.ns import qn
+from docx.oxml import OxmlElement
+def _no_borders(tbl):
+    tblPr = tbl._tbl.tblPr
+    b = OxmlElement("w:tblBorders")
+    for e in ("top","left","bottom","right","insideH","insideV"):
+        el = OxmlElement(f"w:{e}"); el.set(qn("w:val"), "nil"); b.append(el)
+    tblPr.append(b)
+for name, text, hl, photo in BIOS:
+    t = doc.add_table(rows=1, cols=2); t.autofit = False; _no_borders(t)
+    t.columns[0].width = Cm(2.8); t.columns[1].width = Cm(5.6)
+    c0, c1 = t.rows[0].cells; c0.width = Cm(2.8); c1.width = Cm(5.6)
+    q = c0.paragraphs[0]; q.paragraph_format.space_after = Pt(0)
+    if photo:
+        q.add_run().add_picture(f"{ROOT}/figures/bios/{photo}", width=Cm(2.54), height=Cm(3.18))
+    else:
+        r = q.add_run("[photo 2.54 × 3.18 cm]"); r.font.size = Pt(8); r.font.name = FONT; r.font.highlight_color = WD_COLOR_INDEX.YELLOW
+    p = c1.paragraphs[0]; p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY; p.paragraph_format.space_after = Pt(0); p.paragraph_format.line_spacing = 1.0
+    r = p.add_run(name + " "); r.bold = True; r.font.size = Pt(8.5); r.font.name = FONT
+    r = p.add_run(text); r.font.size = Pt(8.5); r.font.name = FONT
     if hl: r.font.highlight_color = WD_COLOR_INDEX.YELLOW
+    sp = doc.add_paragraph(); sp.paragraph_format.space_after = Pt(2); sp.paragraph_format.line_spacing = 0.8
 
 out = f"{ROOT}/VoltyGuard_SASG26_FullPaper.docx"; doc.save(out)
 print("saved", out, "| abstract words:", n_abs_words, "| refs cited:", len(ORDER), "| unused ref keys:", unused)

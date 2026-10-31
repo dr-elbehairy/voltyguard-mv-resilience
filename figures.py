@@ -92,7 +92,11 @@ def fig5():
     names = [("gnn_full", "Full"), ("gnn_nograph", "No graph"), ("gnn_nophys", "No standards/\nphysics layers"), ("xgb", "Per-asset\nGBT"), ("static_alarm", "Static\nalarm")]
     fig, axes = plt.subplots(1, 3, figsize=(7.0, 2.1))
     for ax, key, lab in zip(axes, ("recall", "false_per_100_asset_days", "lead_median_d"), ("Episode recall", "False alarms per 100 asset-days", "Median lead time (days)")):
-        m = [R[n]["agg"][key]["mean"] if key in R[n]["agg"] else 0 for n, _ in names]; s = [R[n]["agg"][key]["sd"] if key in R[n]["agg"] else 0 for n, _ in names]
+        def _g(n, stat):   # like-for-like: first three seeds when a model has more
+            a = R[n]["agg"]
+            if "first3" in a and key in a["first3"]: return a["first3"][key][stat]
+            return a[key][stat] if key in a else 0
+        m = [_g(n, "mean") for n, _ in names]; s = [_g(n, "sd") for n, _ in names]
         ax.bar(range(len(names)), m, yerr=s, color=[C["gnn"], "#e08080", "#e0a0a0", C["xgb"], C["static"]], capsize=2, width=0.65)
         ax.set_xticks(range(len(names))); ax.set_xticklabels([l for _, l in names], fontsize=6); ax.set_title(lab, loc="left")
     fig.tight_layout(); fig.savefig(os.path.join(FIGS, "fig5_ablation.png")); plt.close(fig)
